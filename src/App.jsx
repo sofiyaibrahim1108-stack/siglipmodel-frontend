@@ -1,0 +1,235 @@
+import React, { useState, useRef } from "react";
+
+export default function App() {
+  const [mode, setMode] = useState("OR");
+  const [text, setText] = useState("");
+  const [searchImage, setSearchImage] = useState(null); // File for search query
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const uploadInputRef = useRef(null); // to reset upload input after each upload
+
+  // ── FIX 1: Upload has its own state, not shared with search image ─────────
+  const handleUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("image", file);
+
+    try {
+      setUploading(true);
+      setMessage("Generating embedding...");
+
+      const response = await fetch("http://localhost:5000/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (response.ok) setMessage("✅ Data point added to MongoDB.");
+      else setMessage(`❌ ${data.error || "Upload failed."}`);
+    } catch (error) {
+      setMessage("❌ Network error.");
+    } finally {
+      setUploading(false);
+      // Reset so same file can be re-uploaded if needed
+      if (uploadInputRef.current) uploadInputRef.current.value = "";
+    }
+  };
+
+  // ── FIX 2: Validation + correct field names sent to backend ──────────────
+  const handleSearch = async (e) => {
+    e.preventDefault();
+
+    const hasText = text.trim().length > 0;
+    const hasImage = !!searchImage;
+
+    if (!hasText && !hasImage) {
+      setMessage("❌ Enter text or select a reference image.");
+      return;
+    }
+
+    if (mode === "AND" && (!hasText || !hasImage)) {
+      setMessage("❌ Hybrid mode needs both text and image.");
+      return;
+    }
+
+    setLoading(true);
+    setMessage("");
+
+    const formData = new FormData();
+    formData.append("mode", mode);
+    if (hasText)  formData.append("text", text.trim());
+    if (hasImage) formData.append("image", searchImage); // FIX: uses searchImage not image
+
+    try {
+      const response = await fetch("http://localhost:5000/search", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) throw new Error(data.error || "Search failed.");
+
+      setResults(data);
+    } catch (error) {
+      setMessage(`❌ ${error.message}`);
+      console.error("Search error:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── YOUR ORIGINAL UI — NOT CHANGED ──────────────────────────────────────
+  return (
+    <div className="flex h-screen bg-[#0d1117] text-[#f0f6fc] font-sans selection:bg-blue-500/30">
+      {/* Sidebar: Search & Indexing Controls */}
+      <aside className="w-80 bg-[#161b22] border-r border-[#30363d] p-8 flex flex-col gap-10 overflow-y-auto">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-lg shadow-lg shadow-blue-600/20">S2</div>
+          <div>
+            <h1 className="text-xl font-bold leading-tight">SigLIP Studio</h1>
+            <p className="text-[10px] uppercase tracking-widest text-[#8b949e] font-semibold">Vector Engine</p>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <h3 className="text-xs uppercase tracking-wider text-[#8b949e] font-bold">Search Parameters</h3>
+
+          {/* Segmented Control for OR/AND Logic */}
+          <div className="space-y-2">
+            <label className="text-[13px] font-medium text-[#f0f6fc]">Logic Mode</label>
+            <div className="flex bg-[#0d1117] p-1 rounded-lg border border-[#30363d]">
+              {["OR", "AND"].map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setMode(m)}
+                  className={`flex-1 py-1.5 px-3 rounded-md text-sm font-semibold transition-all ${
+                    mode === m ? "bg-blue-600 text-white shadow-md" : "text-[#8b949e] hover:text-[#f0f6fc]"
+                  }`}
+                >
+                  {m === "OR" ? "Standard" : "Hybrid"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <form onSubmit={handleSearch} className="space-y-5">
+            <div className="space-y-2">
+              <label className="text-[13px] font-medium text-[#f0f6fc]">Text Query</label>
+              <input
+                type="text"
+                placeholder="Describe what you're looking for..."
+                className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[13px] font-medium text-[#f0f6fc]">Image Reference</label>
+              {/* FIX 3: sets searchImage (separate from upload input) */}
+              <input
+                type="file"
+                accept="image/*"
+                className="w-full text-xs text-[#8b949e] file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-blue-600/10 file:text-blue-500 hover:file:bg-blue-600/20 cursor-pointer"
+                onChange={(e) => setSearchImage(e.target.files[0])}
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 text-white font-bold py-3 rounded-lg text-sm transition-all shadow-lg shadow-blue-600/10 active:scale-[0.98]"
+            >
+              {loading ? "Analyzing Vectors..." : "Run Search"}
+            </button>
+          </form>
+        </div>
+
+        {/* Indexing Area */}
+        <div className="mt-auto p-5 rounded-2xl bg-blue-600/5 border border-blue-500/20 group hover:border-blue-500/40 transition-colors">
+          <h4 className="text-sm font-semibold mb-2">New Data Entry</h4>
+          <p className="text-[11px] text-[#8b949e] leading-relaxed mb-4">
+            Vectorize new assets into your MongoDB collection automatically.
+          </p>
+          {/* FIX 4: separate input with its own ref — does NOT touch searchImage */}
+          <input
+            ref={uploadInputRef}
+            type="file"
+            id="idx-upload"
+            accept="image/*"
+            className="hidden"
+            onChange={handleUpload}
+          />
+          <label
+            htmlFor="idx-upload"
+            className="block text-center border border-blue-600/40 text-blue-500 py-2 rounded-lg cursor-pointer font-bold text-xs hover:bg-blue-600 hover:text-white transition-all shadow-sm group-hover:shadow-blue-500/10"
+          >
+            {uploading ? "Generating Embedding..." : "Upload & Vectorize"}
+          </label>
+          {message && (
+            <p className="text-[10px] text-center mt-3 font-medium">{message}</p>
+          )}
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <main className="flex-1 p-12 overflow-y-auto">
+        <header className="flex justify-between items-end border-b border-[#30363d] pb-8 mb-10">
+          <div>
+            <h2 className="text-3xl font-extrabold tracking-tight">Semantic Matches</h2>
+            <p className="text-[#8b949e] text-sm mt-1">
+              Cross-modal similarity results from Atlas Vector Search.
+            </p>
+          </div>
+          <div className="px-4 py-1.5 bg-[#21262d] rounded-full border border-[#30363d] text-sm font-bold shadow-sm">
+            {results.length} <span className="text-[#8b949e] font-normal">Items found</span>
+          </div>
+        </header>
+
+        {results.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+            {results.map((item, idx) => (
+              <div
+                key={idx}
+                className="bg-[#21262d] rounded-2xl border border-[#30363d] overflow-hidden group hover:border-blue-500/50 transition-all hover:shadow-2xl hover:shadow-blue-500/5"
+              >
+                <div className="relative aspect-video overflow-hidden">
+                  {/* FIX 5: replace Windows backslashes in path with forward slashes */}
+                  <img
+                    src={`http://localhost:5000/${item.imagePath.replace(/\\/g, "/")}`}
+                    alt="Search Result"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                  <div className="absolute top-3 right-3 px-2 py-1 bg-black/60 backdrop-blur-md rounded-md border border-white/10 text-[10px] font-bold tracking-widest text-white uppercase">
+                    Atlas Match
+                  </div>
+                </div>
+                <div className="p-4 flex justify-between items-center bg-gradient-to-b from-transparent to-black/10">
+                  <span className="text-[11px] text-[#8b949e] font-bold uppercase tracking-wider">Similarity Score</span>
+                  <span className="text-sm font-black text-green-400 bg-green-400/10 px-2 py-1 rounded-md">
+                    {(item.similarity * 100).toFixed(1)}%
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="h-[60vh] flex flex-col items-center justify-center text-center opacity-40">
+            <div className="text-7xl mb-6 grayscale group-hover:grayscale-0 transition-all duration-700 animate-pulse">📡</div>
+            <h3 className="text-xl font-bold">Waiting for Vector Query</h3>
+            <p className="text-sm max-w-xs mt-2 leading-relaxed">
+              Adjust your filters or upload a reference image to begin scanning your database.
+            </p>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}

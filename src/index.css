@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+/* This is where you can add global background colors */
+body {
+  margin: 0;
+  background-color: #0d1117; /* Keeps that nice dark look */
+  color: white;
+}
