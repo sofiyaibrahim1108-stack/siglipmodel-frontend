@@ -1,17 +1,19 @@
 import React, { useState, useRef } from "react";
 
+const API = "http://localhost:5000";
+
 export default function App() {
-  const [mode, setMode] = useState("OR");
-  const [text, setText] = useState("");
-  const [searchImage, setSearchImage] = useState(null); // File for search query
-  const [results, setResults] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [text, setText]           = useState("");
+  const [searchImage, setSearchImage] = useState(null);
+  const [results, setResults]     = useState([]);
+  const [loading, setLoading]     = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage]     = useState("");
+  const [searched, setSearched]   = useState(false);
 
-  const uploadInputRef = useRef(null); // to reset upload input after each upload
+  const uploadInputRef = useRef(null);
 
-  // ── FIX 1: Upload has its own state, not shared with search image ─────────
+  // ── Upload & Vectorize ────────────────────────────────────────────────────
   const handleUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -23,7 +25,7 @@ export default function App() {
       setUploading(true);
       setMessage("Generating embedding...");
 
-      const response = await fetch("http://localhost:5000/upload", {
+      const response = await fetch(`${API}/upload`, {
         method: "POST",
         body: formData,
       });
@@ -32,20 +34,19 @@ export default function App() {
 
       if (response.ok) setMessage("✅ Data point added to MongoDB.");
       else setMessage(`❌ ${data.error || "Upload failed."}`);
-    } catch (error) {
+    } catch {
       setMessage("❌ Network error.");
     } finally {
       setUploading(false);
-      // Reset so same file can be re-uploaded if needed
       if (uploadInputRef.current) uploadInputRef.current.value = "";
     }
   };
 
-  // ── FIX 2: Validation + correct field names sent to backend ──────────────
+  // ── Search ────────────────────────────────────────────────────────────────
   const handleSearch = async (e) => {
     e.preventDefault();
 
-    const hasText = text.trim().length > 0;
+    const hasText  = text.trim().length > 0;
     const hasImage = !!searchImage;
 
     if (!hasText && !hasImage) {
@@ -53,21 +54,16 @@ export default function App() {
       return;
     }
 
-    if (mode === "AND" && (!hasText || !hasImage)) {
-      setMessage("❌ Hybrid mode needs both text and image.");
-      return;
-    }
-
     setLoading(true);
     setMessage("");
+    setResults([]);
 
     const formData = new FormData();
-    formData.append("mode", mode);
     if (hasText)  formData.append("text", text.trim());
-    if (hasImage) formData.append("image", searchImage); // FIX: uses searchImage not image
+    if (hasImage) formData.append("image", searchImage);
 
     try {
-      const response = await fetch("http://localhost:5000/search", {
+      const response = await fetch(`${API}/search`, {
         method: "POST",
         body: formData,
       });
@@ -77,51 +73,46 @@ export default function App() {
       if (!response.ok) throw new Error(data.error || "Search failed.");
 
       setResults(data);
-    } catch (error) {
-      setMessage(`❌ ${error.message}`);
-      console.error("Search error:", error);
+      setSearched(true);
+    } catch (err) {
+      setMessage(`❌ ${err.message}`);
     } finally {
       setLoading(false);
     }
   };
 
-  // ─── YOUR ORIGINAL UI — NOT CHANGED ──────────────────────────────────────
   return (
     <div className="flex h-screen bg-[#0d1117] text-[#f0f6fc] font-sans selection:bg-blue-500/30">
-      {/* Sidebar: Search & Indexing Controls */}
+
+      {/* ── SIDEBAR ──────────────────────────────────────────────────────── */}
       <aside className="w-80 bg-[#161b22] border-r border-[#30363d] p-8 flex flex-col gap-10 overflow-y-auto">
+
+        {/* Logo */}
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-lg shadow-lg shadow-blue-600/20">S2</div>
+          <div className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-lg shadow-lg shadow-blue-600/20">
+            S2
+          </div>
           <div>
             <h1 className="text-xl font-bold leading-tight">SigLIP Studio</h1>
-            <p className="text-[10px] uppercase tracking-widest text-[#8b949e] font-semibold">Vector Engine</p>
+            <p className="text-[10px] uppercase tracking-widest text-[#8b949e] font-semibold">
+              Vector Engine
+            </p>
           </div>
         </div>
 
+        {/* ── Search Parameters ─────────────────────────────────────────── */}
         <div className="space-y-6">
-          <h3 className="text-xs uppercase tracking-wider text-[#8b949e] font-bold">Search Parameters</h3>
-
-          {/* Segmented Control for OR/AND Logic */}
-          <div className="space-y-2">
-            <label className="text-[13px] font-medium text-[#f0f6fc]">Logic Mode</label>
-            <div className="flex bg-[#0d1117] p-1 rounded-lg border border-[#30363d]">
-              {["OR", "AND"].map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setMode(m)}
-                  className={`flex-1 py-1.5 px-3 rounded-md text-sm font-semibold transition-all ${
-                    mode === m ? "bg-blue-600 text-white shadow-md" : "text-[#8b949e] hover:text-[#f0f6fc]"
-                  }`}
-                >
-                  {m === "OR" ? "Standard" : "Hybrid"}
-                </button>
-              ))}
-            </div>
-          </div>
+          <h3 className="text-xs uppercase tracking-wider text-[#8b949e] font-bold">
+            Search Parameters
+          </h3>
 
           <form onSubmit={handleSearch} className="space-y-5">
+
+            {/* Text query */}
             <div className="space-y-2">
-              <label className="text-[13px] font-medium text-[#f0f6fc]">Text Query</label>
+              <label className="text-[13px] font-medium text-[#f0f6fc]">
+                Text Query
+              </label>
               <input
                 type="text"
                 placeholder="Describe what you're looking for..."
@@ -131,9 +122,11 @@ export default function App() {
               />
             </div>
 
+            {/* Image reference */}
             <div className="space-y-2">
-              <label className="text-[13px] font-medium text-[#f0f6fc]">Image Reference</label>
-              {/* FIX 3: sets searchImage (separate from upload input) */}
+              <label className="text-[13px] font-medium text-[#f0f6fc]">
+                Image Reference
+              </label>
               <input
                 type="file"
                 accept="image/*"
@@ -152,13 +145,12 @@ export default function App() {
           </form>
         </div>
 
-        {/* Indexing Area */}
+        {/* ── Upload & Vectorize ─────────────────────────────────────────── */}
         <div className="mt-auto p-5 rounded-2xl bg-blue-600/5 border border-blue-500/20 group hover:border-blue-500/40 transition-colors">
           <h4 className="text-sm font-semibold mb-2">New Data Entry</h4>
           <p className="text-[11px] text-[#8b949e] leading-relaxed mb-4">
             Vectorize new assets into your MongoDB collection automatically.
           </p>
-          {/* FIX 4: separate input with its own ref — does NOT touch searchImage */}
           <input
             ref={uploadInputRef}
             type="file"
@@ -179,7 +171,7 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Main Content Area */}
+      {/* ── MAIN CONTENT ───────────────────────────────────────────────────── */}
       <main className="flex-1 p-12 overflow-y-auto">
         <header className="flex justify-between items-end border-b border-[#30363d] pb-8 mb-10">
           <div>
@@ -189,7 +181,8 @@ export default function App() {
             </p>
           </div>
           <div className="px-4 py-1.5 bg-[#21262d] rounded-full border border-[#30363d] text-sm font-bold shadow-sm">
-            {results.length} <span className="text-[#8b949e] font-normal">Items found</span>
+            {results.length}{" "}
+            <span className="text-[#8b949e] font-normal">Items found</span>
           </div>
         </header>
 
@@ -201,9 +194,9 @@ export default function App() {
                 className="bg-[#21262d] rounded-2xl border border-[#30363d] overflow-hidden group hover:border-blue-500/50 transition-all hover:shadow-2xl hover:shadow-blue-500/5"
               >
                 <div className="relative aspect-video overflow-hidden">
-                  {/* FIX 5: replace Windows backslashes in path with forward slashes */}
+                  {/* replace Windows backslashes with forward slashes */}
                   <img
-                    src={`http://localhost:5000/${item.imagePath.replace(/\\/g, "/")}`}
+                    src={`${API}/${item.imagePath.replace(/\\/g, "/")}`}
                     alt="Search Result"
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                   />
@@ -212,7 +205,9 @@ export default function App() {
                   </div>
                 </div>
                 <div className="p-4 flex justify-between items-center bg-gradient-to-b from-transparent to-black/10">
-                  <span className="text-[11px] text-[#8b949e] font-bold uppercase tracking-wider">Similarity Score</span>
+                  <span className="text-[11px] text-[#8b949e] font-bold uppercase tracking-wider">
+                    Similarity Score
+                  </span>
                   <span className="text-sm font-black text-green-400 bg-green-400/10 px-2 py-1 rounded-md">
                     {(item.similarity * 100).toFixed(1)}%
                   </span>
@@ -222,10 +217,16 @@ export default function App() {
           </div>
         ) : (
           <div className="h-[60vh] flex flex-col items-center justify-center text-center opacity-40">
-            <div className="text-7xl mb-6 grayscale group-hover:grayscale-0 transition-all duration-700 animate-pulse">📡</div>
-            <h3 className="text-xl font-bold">Waiting for Vector Query</h3>
+            <div className="text-7xl mb-6 grayscale group-hover:grayscale-0 transition-all duration-700 animate-pulse">
+              📡
+            </div>
+            <h3 className="text-xl font-bold">
+              {searched ? "No matches above 80% similarity" : "Waiting for Vector Query"}
+            </h3>
             <p className="text-sm max-w-xs mt-2 leading-relaxed">
-              Adjust your filters or upload a reference image to begin scanning your database.
+              {searched
+                ? "Try a more specific description or a clearer reference image."
+                : "Adjust your filters or upload a reference image to begin scanning your database."}
             </p>
           </div>
         )}
