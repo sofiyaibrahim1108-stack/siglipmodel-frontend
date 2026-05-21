@@ -10,6 +10,7 @@ export default function App() {
   const [uploading, setUploading] = useState(false);
   const [message, setMessage]     = useState("");
   const [searched, setSearched]   = useState(false);
+  const [threshold, setThreshold] = useState(70); // Default 70%
 
   const uploadInputRef = useRef(null);
 
@@ -61,6 +62,7 @@ export default function App() {
     const formData = new FormData();
     if (hasText)  formData.append("text", text.trim());
     if (hasImage) formData.append("image", searchImage);
+    formData.append("threshold", threshold); // ✅ Send threshold to backend
 
     try {
       const response = await fetch(`${API}/search`, {
@@ -135,6 +137,32 @@ export default function App() {
               />
             </div>
 
+            {/* ✅ Confidence Threshold Slider */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <label className="text-[13px] font-medium text-[#f0f6fc]">
+                  Confidence Threshold
+                </label>
+                <span className="text-sm font-black text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded-md">
+                  {threshold}%
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={threshold}
+                onChange={(e) => setThreshold(Number(e.target.value))}
+                className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-blue-500 bg-[#30363d]"
+              />
+              <div className="flex justify-between text-[10px] text-[#8b949e]">
+                <span>0%</span>
+                <span>50%</span>
+                <span>100%</span>
+              </div>
+            </div>
+
             <button
               type="submit"
               disabled={loading}
@@ -180,9 +208,23 @@ export default function App() {
               Cross-modal similarity results from Atlas Vector Search.
             </p>
           </div>
-          <div className="px-4 py-1.5 bg-[#21262d] rounded-full border border-[#30363d] text-sm font-bold shadow-sm">
-            {results.length}{" "}
-            <span className="text-[#8b949e] font-normal">Items found</span>
+          <div className="flex items-center gap-3">
+            {/* AND mode badge */}
+            {searched && text.trim() && searchImage && (
+              <div className="px-3 py-1.5 bg-purple-600/10 rounded-full border border-purple-500/30 text-xs font-bold text-purple-400">
+                AND mode
+              </div>
+            )}
+            {/* Active threshold badge */}
+            {searched && (
+              <div className="px-3 py-1.5 bg-blue-600/10 rounded-full border border-blue-500/30 text-xs font-bold text-blue-400">
+                ≥ {threshold}% threshold
+              </div>
+            )}
+            <div className="px-4 py-1.5 bg-[#21262d] rounded-full border border-[#30363d] text-sm font-bold shadow-sm">
+              {results.length}{" "}
+              <span className="text-[#8b949e] font-normal">Items found</span>
+            </div>
           </div>
         </header>
 
@@ -194,7 +236,6 @@ export default function App() {
                 className="bg-[#21262d] rounded-2xl border border-[#30363d] overflow-hidden group hover:border-blue-500/50 transition-all hover:shadow-2xl hover:shadow-blue-500/5"
               >
                 <div className="relative aspect-video overflow-hidden">
-                  {/* replace Windows backslashes with forward slashes */}
                   <img
                     src={`${API}/${item.imagePath.replace(/\\/g, "/")}`}
                     alt="Search Result"
@@ -206,10 +247,10 @@ export default function App() {
                 </div>
                 <div className="p-4 flex justify-between items-center bg-gradient-to-b from-transparent to-black/10">
                   <span className="text-[11px] text-[#8b949e] font-bold uppercase tracking-wider">
-                    Similarity Score
+                    Confidence Score
                   </span>
                   <span className="text-sm font-black text-green-400 bg-green-400/10 px-2 py-1 rounded-md">
-                    {(item.similarity * 100).toFixed(1)}%
+                    {item.confidence}%
                   </span>
                 </div>
               </div>
@@ -221,11 +262,11 @@ export default function App() {
               📡
             </div>
             <h3 className="text-xl font-bold">
-              {searched ? "No matches above 80% similarity" : "Waiting for Vector Query"}
+              {searched ? `No matches found above ${threshold}% threshold` : "Waiting for Vector Query"}
             </h3>
             <p className="text-sm max-w-xs mt-2 leading-relaxed">
               {searched
-                ? "Try a more specific description or a clearer reference image."
+                ? "Try lowering the threshold or use a more specific description."
                 : "Adjust your filters or upload a reference image to begin scanning your database."}
             </p>
           </div>
